@@ -26,8 +26,7 @@ struct LimitsView: View {
                         }
                         .padding(Metrics.edge)
                     }
-                    // Grows to the screen, so two providers fit without scrolling on most Macs.
-                    .frame(maxHeight: max(480, (NSScreen.main?.visibleFrame.height ?? 800) - 120))
+                    .frame(maxHeight: Metrics.scrollHeight)
                     .fixedSize(horizontal: false, vertical: true)
                 } else if store.error == nil {
                     EmptyState(store: store)
@@ -47,6 +46,13 @@ enum Metrics {
     static let inset: CGFloat = 12
     static let column: CGFloat = 58
     static let tileRadius: CGFloat = 12
+
+    /// Tall enough that two providers fit without scrolling on most Macs, short enough that the
+    /// footer (43pt) and the tallest error banner (about 120pt) still fit on the smallest screen.
+    static var scrollHeight: CGFloat {
+        let screen = NSScreen.screens.map(\.visibleFrame.height).min() ?? 800
+        return max(480, screen - 190)
+    }
 }
 
 /// The color a limit earns. Healthy limits stay neutral so color only ever means "look at this".
@@ -79,6 +85,7 @@ private struct ProviderSection: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(pool.provider.displayName)
                     .font(.system(size: 15, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Text(accountSummary)
                     .font(.system(size: 11))
@@ -95,18 +102,20 @@ private struct ProviderSection: View {
                 .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 8) {
-                    HStack(alignment: .top, spacing: 8) {
-                        ForEach(mainWindows) { window in
-                            WindowTile(window: window, activeAccounts: pool.activeAccountCount, now: now)
+                    if !mainWindows.isEmpty {
+                        HStack(alignment: .top, spacing: 8) {
+                            ForEach(mainWindows) { window in
+                                WindowTile(window: window, activeAccounts: pool.activeAccountCount, now: now)
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    .fixedSize(horizontal: false, vertical: true)
                     ForEach(extraWindows) { window in
                         ExtraWindowTile(window: window, activeAccounts: pool.activeAccountCount, now: now)
                     }
                 }
             }
-            AccountList(accounts: pool.accounts, columns: mainWindows.map(Column.init), now: now)
+            AccountList(accounts: pool.accounts, columns: columns, now: now)
         }
     }
 
@@ -122,6 +131,16 @@ private struct ProviderSection: View {
     private var extraWindows: [PooledWindow] {
         let main = Set(mainWindows.map(\.id))
         return pool.windows.filter { !main.contains($0.id) }
+    }
+
+    /// The tiles' windows. With nothing pooled (every account disabled), the 5-hour and weekly
+    /// windows the accounts still report, so their readings keep their columns.
+    private var columns: [Column] {
+        if !mainWindows.isEmpty { return mainWindows.map { Column(id: $0.id, title: $0.label) } }
+        let windows = pool.accounts.flatMap(\.windows)
+        return ["5h", "7d"].compactMap { id in
+            windows.first { $0.id == id }.map { Column(id: id, title: $0.label) }
+        }
     }
 
     private var accountSummary: String {
@@ -143,18 +162,8 @@ private struct WindowTile: View {
             Text(window.label)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(number)
-                    .font(.system(size: 30, weight: .semibold))
-                Text("%")
-                    .font(.system(size: 17, weight: .semibold))
-                Text("left")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-            }
-            .foregroundStyle(Level.tint(window.remainingFraction) ?? .primary)
-            .padding(.top, 2)
+            Reading(remaining: window.remainingFraction, size: 30)
+                .padding(.top, 2)
             Meter(remaining: window.remainingFraction, height: 5)
                 .padding(.top, 8)
             VStack(alignment: .leading, spacing: 1) {
@@ -172,11 +181,35 @@ private struct WindowTile: View {
         .tile()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Pooled \(window.label)")
-        .accessibilityValue("\(LimitFormat.percent(window.remainingFraction)) left. \(resetText(window, now: now))")
+        .accessibilityValue(detail.joined(separator: ". "))
     }
 
-    private var number: String {
-        String(LimitFormat.percent(window.remainingFraction).dropLast())
+    private var detail: [String] {
+        var parts = ["\(LimitFormat.percent(window.remainingFraction)) left", resetText(window, now: now)]
+        if window.accountCount < activeAccounts {
+            parts.append("\(window.accountCount) of \(activeAccounts) reporting")
+        }
+        return parts
+    }
+}
+
+/// "33% left", with the number set large. Only the number takes the warning color.
+private struct Reading: View {
+    let remaining: Double
+    let size: CGFloat
+
+    var body: some View {
+        let number = String(LimitFormat.percent(remaining).dropLast())
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(
+                "\(Text(number).font(.system(size: size, weight: .semibold)))\(Text("%").font(.system(size: size * 0.57, weight: .semibold)))"
+            )
+            .foregroundStyle(Level.tint(remaining) ?? .primary)
+            Text("left")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
     }
 }
 
@@ -187,30 +220,22 @@ private struct ExtraWindowTile: View {
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(window.label)
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
-                    Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(window.label)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer(minLength: 8)
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(String(LimitFormat.percent(window.remainingFraction).dropLast()))
-                        .font(.system(size: 20, weight: .semibold))
-                    Text("%").font(.system(size: 13, weight: .semibold))
-                    Text("left")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 4)
-                }
-                .foregroundStyle(Level.tint(window.remainingFraction) ?? .primary)
+                Reading(remaining: window.remainingFraction, size: 20)
             }
-            Meter(remaining: window.remainingFraction, height: 4)
+            Meter(remaining: window.remainingFraction, height: 5)
+                .padding(.top, 8)
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.top, 8)
         }
         .monospacedDigit()
         .tile()
@@ -246,11 +271,6 @@ private extension View {
 private struct Column: Identifiable {
     let id: String
     let title: String
-
-    init(_ window: PooledWindow) {
-        id = window.id
-        title = window.label
-    }
 }
 
 private struct AccountList: View {
@@ -298,10 +318,17 @@ private struct AccountRow: View {
                         .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(status.text)
-                        .font(.system(size: 11))
-                        .foregroundStyle(status.tint ?? .secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if let tint = status.tint {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(tint)
+                        }
+                        Text(status.text)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .font(.system(size: 11))
                 }
                 .layoutPriority(1)
                 .accessibilityElement(children: .combine)
@@ -337,9 +364,9 @@ private struct AccountRow: View {
         if account.isDisabled { return (plan + "Disabled", nil) }
         if account.isUnavailable {
             if let back = account.availableAgainAt, back > now {
-                return ("Cooling down · \(LimitFormat.duration(until: back, from: now))", .orange)
+                return (plan + "Cooling down · \(LimitFormat.duration(until: back, from: now))", .orange)
             }
-            return ("Unavailable", .orange)
+            return (plan + "Unavailable", .orange)
         }
         guard let observedAt = account.observedAt else { return (plan + "No data yet", nil) }
         return (plan + "Read \(LimitFormat.age(of: observedAt, at: now))", nil)
@@ -394,17 +421,15 @@ private struct ScopedWindowLine: View {
             Image(systemName: "arrow.turn.down.right")
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.tertiary)
-            Text(window.label)
+            Text(window.label + (reset.map { " · \($0)" } ?? ""))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            Spacer(minLength: 8)
-            if let reset {
-                Text(reset).foregroundStyle(.secondary)
-            }
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
             Text(LimitFormat.percent(remaining))
                 .fontWeight(.semibold)
                 .foregroundStyle((isDisabled ? nil : Level.tint(remaining)) ?? .primary)
-                .frame(width: 36, alignment: .trailing)
+                .frame(width: Metrics.column, alignment: .trailing)
         }
         .font(.system(size: 11))
         .accessibilityElement(children: .ignore)
