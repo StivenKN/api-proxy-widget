@@ -36,7 +36,7 @@ enum SignalParser {
             guard parts[0] != "overage" else { continue }
             fields[String(parts[0]), default: [:]][String(parts[1])] = value
         }
-        return fields.compactMap { id, field in
+        var windows: [Ranked] = fields.compactMap { id, field in
             let rejected = field["status"] == "rejected"
             guard let used = rejected ? 1 : field["utilization"].flatMap(Double.init), used.isFinite else {
                 return nil
@@ -49,6 +49,13 @@ enum SignalParser {
             )
             return (windowRank(id), window)
         }
+        // Anthropic leaves the 5-hour headers out while that window has no usage, so a
+        // reading with a weekly window and no 5-hour one means the 5-hour window is unused.
+        // CLIProxyAPI reads it the same way when it routes (QuotaWindowIdle).
+        if windows.contains(where: { $0.window.id == "7d" }), !windows.contains(where: { $0.window.id == "5h" }) {
+            windows.append((windowRank("5h"), LimitWindow(id: "5h", label: claudeLabel("5h"), usedFraction: 0, resetsAt: nil)))
+        }
+        return windows
     }
 
     private static func claudeLabel(_ id: String) -> String {
@@ -69,6 +76,8 @@ enum SignalParser {
     /// `x-codex-[<limit>-]<primary|secondary>-<field>`. Used percent is 0...100. Which slot is
     /// the 5-hour window and which the weekly one depends on the plan, so the window length
     /// decides. Extra limits (a separate model allowance, for example) carry a limit name.
+    /// The hub spells an extra limit's header prefix differently for HTTP and websocket
+    /// traffic, so the limit name, when there is one, identifies it across accounts.
     private static func codexWindows(_ signals: [String: String], observedAt: Date?) -> [Ranked] {
         let prefix = "x-codex-"
         let suffixes = ["used-percent", "window-minutes", "reset-at", "reset-after-seconds"]
@@ -99,7 +108,7 @@ enum SignalParser {
             }
             let limitName = signals["x-codex-\(limit)-limit-name"] ?? limit
             let window = LimitWindow(
-                id: "\(limit):\(id)",
+                id: "\(limitName.lowercased()):\(id)",
                 label: "\(limitName) · \(label)",
                 usedFraction: percent / 100,
                 resetsAt: resetsAt

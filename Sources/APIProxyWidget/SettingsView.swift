@@ -72,6 +72,9 @@ struct SettingsView: View {
     }
 
     private func save() {
+        // Return can reach this through both the field and the default button. A second save
+        // would send a wrong key twice, and each wrong key counts toward the hub's ban.
+        guard !isSaving else { return }
         guard let url = HubClient.normalizedBaseURL(hubText) else {
             problem = "That doesn't look like a hub address. Try https://hub.example.ts.net:8317."
             return
@@ -95,6 +98,8 @@ struct SettingsView: View {
     }
 
     private func setLaunchAtLogin(_ wanted: Bool) {
+        // Setting the checkbox back to the real state below lands here again.
+        guard wanted != (SMAppService.mainApp.status == .enabled) else { return }
         do {
             if wanted {
                 try SMAppService.mainApp.register()

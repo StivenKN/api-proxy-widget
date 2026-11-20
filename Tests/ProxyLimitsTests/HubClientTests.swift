@@ -139,6 +139,8 @@ private func client(host: String, _ stub: StubProtocol.Stub) -> HubClient {
         ("localhost:8317", "http://localhost:8317"),
         // No scheme on a remote host means HTTPS: the request carries the management key.
         ("hub.example.ts.net:8317", "https://hub.example.ts.net:8317"),
+        ("localhost.example.com:8317", "https://localhost.example.com:8317"),
+        ("127.0.0.1.example.com", "https://127.0.0.1.example.com"),
     ])
     func normalizesPastedAddresses(input: String, expected: String) {
         #expect(HubClient.normalizedBaseURL(input)?.absoluteString == expected)

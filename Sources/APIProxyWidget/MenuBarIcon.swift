@@ -2,7 +2,8 @@ import AppKit
 import ProxyLimits
 
 /// Draws the menu bar item: two gauges that drain as the pool is used.
-/// The top one is the 5-hour window, the bottom one the weekly window.
+/// The top one is the 5-hour window, the bottom one the weekly window. A gauge with no reading
+/// is an outline, so "unknown" never looks like "used up".
 enum MenuBarIcon {
     /// A warning sign replaces the gauges once they would show limits nobody can vouch for.
     static func image(for pool: ProviderPool?, isOutOfDate: Bool) -> NSImage {
@@ -29,9 +30,16 @@ enum MenuBarIcon {
                     height: barHeight
                 )
                 let radius = barHeight / 2
+                guard let level else {
+                    let outline = NSBezierPath(
+                        roundedRect: track.insetBy(dx: 0.5, dy: 0.5), xRadius: radius - 0.5, yRadius: radius - 0.5)
+                    NSColor.black.withAlphaComponent(0.45).setStroke()
+                    outline.stroke()
+                    continue
+                }
                 NSColor.black.withAlphaComponent(0.3).setFill()
                 NSBezierPath(roundedRect: track, xRadius: radius, yRadius: radius).fill()
-                guard let level, level > 0 else { continue }
+                guard level > 0 else { continue }
                 // Never narrower than a dot, so "a little left" doesn't look empty.
                 let width = max(barHeight, track.width * min(1, level))
                 let fill = NSRect(x: track.minX, y: track.minY, width: width, height: barHeight)

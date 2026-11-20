@@ -49,7 +49,11 @@ private struct ProviderSection: View {
                 Text(accountSummary).font(.caption).foregroundStyle(.secondary)
             }
             if pool.windows.isEmpty {
-                Text("No limits read yet. The hub learns them from each account's traffic.")
+                Text(
+                    pool.activeAccountCount == 0
+                        ? "Every account here is disabled on the hub."
+                        : "No limits read yet. The hub learns them from each account's traffic."
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

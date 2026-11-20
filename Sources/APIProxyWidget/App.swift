@@ -9,7 +9,7 @@ struct APIProxyWidgetApp: App {
         MenuBarExtra {
             PanelView(store: store)
         } label: {
-            Image(nsImage: MenuBarIcon.image(for: store.pools.first, isOutOfDate: store.isOutOfDate))
+            Image(nsImage: MenuBarIcon.image(for: store.menuBarPool, isOutOfDate: store.isOutOfDate))
         }
         .menuBarExtraStyle(.window)
     }

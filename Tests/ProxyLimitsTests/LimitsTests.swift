@@ -22,9 +22,17 @@ private func isClose(_ a: Double?, _ b: Double) -> Bool {
         #expect(isClose(ada.observedAt?.timeIntervalSince1970, 1_795_136_709.482))
     }
 
-    @Test func anAccountWithoutA5HourReadingOnlyHasItsWeeklyWindow() throws {
+    @Test func aClaudeReadingWithoutA5HourWindowMeansThatWindowIsUnused() throws {
+        // Anthropic sends no 5-hour headers while the 5-hour window has no usage.
         let grace = try #require(fixtureAccounts().first { $0.id.contains("bbbb2222") })
-        #expect(grace.windows.map(\.id) == ["7d"])
+
+        #expect(grace.windows.map(\.id) == ["5h", "7d"])
+        #expect(grace.windows.first?.usedFraction == 0)
+        #expect(grace.windows.first?.resetsAt == nil)
+    }
+
+    @Test func aClaudeAccountWithNoReadingHasNoWindows() {
+        #expect(SignalParser.windows(provider: .claude, signals: [:], observedAt: nil).isEmpty)
     }
 
     @Test func aRejectedWindowIsFullyUsedEvenWithoutAUtilization() throws {
@@ -50,7 +58,7 @@ private func isClose(_ a: Double?, _ b: Double) -> Bool {
         let codex = try #require(fixtureAccounts().first { $0.provider == .codex })
 
         #expect(codex.plan == "pro")
-        #expect(codex.windows.map(\.id) == ["5h", "7d", "bengalfox:7d"])
+        #expect(codex.windows.map(\.id) == ["5h", "7d", "gpt-5.3-codex-spark:7d"])
         #expect(codex.windows.map(\.label) == ["5-hour", "Weekly", "GPT-5.3-Codex-Spark · Weekly"])
         #expect(codex.windows.map(\.usedFraction) == [0.51, 0.17, 0.35])
         // No absolute reset on the 5-hour window: observed 23:00:00Z plus 7200 seconds.
@@ -70,6 +78,24 @@ private func isClose(_ a: Double?, _ b: Double) -> Bool {
         )
         #expect(windows.map(\.id) == ["7d", "secondary"])
         #expect(windows.map(\.label) == ["Weekly", "Secondary"])
+    }
+
+    @Test func anExtraCodexLimitHasOneIdHoweverTheHubSawIt() {
+        // The hub prefixes an extra limit with a short name for HTTP traffic and with
+        // "additional-<name>" for websocket traffic.
+        func ids(_ prefix: String) -> [String] {
+            SignalParser.windows(
+                provider: .codex,
+                signals: [
+                    "\(prefix)-limit-name": "GPT-5.3-Codex-Spark",
+                    "\(prefix)-primary-used-percent": "20",
+                    "\(prefix)-primary-window-minutes": "300",
+                ],
+                observedAt: nil
+            ).map(\.id)
+        }
+        #expect(ids("X-Codex-Bengalfox") == ["gpt-5.3-codex-spark:5h"])
+        #expect(ids("X-Codex-Additional-Gpt-5.3-Codex-Spark") == ["gpt-5.3-codex-spark:5h"])
     }
 
     @Test func ignoresValuesThatAreNotNumbers() {
@@ -113,10 +139,11 @@ private func isClose(_ a: Double?, _ b: Double) -> Bool {
         #expect(pools.map(\.provider) == [.claude, .codex])
         #expect(claude.windows.map(\.id) == ["5h", "7d", "7d_sonnet"])
 
-        // ada has 80% left and linus is rejected; grace reports no 5-hour window.
+        // ada has 80% left, grace's window is unused and linus is rejected. The API-key
+        // entry has no reading and is left out.
         let fiveHour = try #require(claude.window("5h"))
-        #expect(isClose(fiveHour.remainingFraction, 0.4))
-        #expect(fiveHour.accountCount == 2)
+        #expect(isClose(fiveHour.remainingFraction, (0.8 + 1 + 0) / 3))
+        #expect(fiveHour.accountCount == 3)
         #expect(fiveHour.nextReset == date(1_795_147_200))
 
         // ada 73%, grace 39%, linus 10%. The benched account's 1% is left out.

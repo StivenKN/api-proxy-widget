@@ -12,14 +12,16 @@ The screenshot shows made-up accounts from `make demo-hub`.
 
 ## What you see
 
-The menu bar item is two gauges. The top one is the pooled 5-hour window and the bottom one is the pooled weekly window. Both drain as the pool is used. If the hub has Claude accounts the gauges show Claude, otherwise Codex. A warning sign replaces them when the hub rejects the key or has not answered for five minutes.
+The menu bar item is two gauges. The top one is the pooled 5-hour window and the bottom one is the pooled weekly window. Both drain as the pool is used. A gauge is an outline while the hub has no reading for it. If the hub has Claude limits the gauges show Claude, otherwise Codex. A warning sign replaces them when the hub rejects the key or has not answered for five minutes.
 
 Click it for the panel:
 
 - Per provider, each limit window averaged over the accounts that report it, with the soonest reset.
 - Each account with its own windows, how long ago the hub read them, and whether the account is cooling down or disabled.
 
-A pooled number is the average share left over the accounts that report that window, the same rule the hub's quota page uses. An account that reports no 5-hour window is left out of the 5-hour average instead of counted as full. Disabled accounts are listed but never averaged.
+A pooled number is the average share left over the accounts that report that window, the same rule the hub's quota page uses. An account with no reading for a window is left out of that window's average instead of counted as full. Disabled accounts are listed but never averaged.
+
+Anthropic leaves the 5-hour figures out of its responses while an account's 5-hour window is unused. The widget shows that account's 5-hour window as 100% left, with no reset time.
 
 ## Install
 
@@ -84,6 +86,7 @@ make app         # build/API Proxy Widget.app
 - It reads Claude and Codex accounts only. Other providers on the hub are ignored.
 - Codex support is built from the header shapes in CLIProxyAPI's own tests. It has not been checked against a live Codex account.
 - It shows the 5-hour, weekly and model-scoped windows the provider puts in response headers. Extra usage credits are not shown.
+- It reads the hub's `/v0/management` route, which CLIProxyAPI v8 calls deprecated but still serves with a frozen response shape.
 
 ## License
 

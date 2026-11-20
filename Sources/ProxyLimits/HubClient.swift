@@ -30,10 +30,15 @@ public struct HubClient: Sendable {
     private let managementKey: String
     private let session: URLSession
 
-    public init(baseURL: URL, managementKey: String, session: URLSession = .shared) {
+    /// Keeps nothing on disk. The shared session would cache every answer in
+    /// `~/Library/Caches`, and an answer lists each account's email and, for API-key
+    /// credentials, the key itself.
+    private static let privateSession = URLSession(configuration: .ephemeral)
+
+    public init(baseURL: URL, managementKey: String, session: URLSession? = nil) {
         self.baseURL = baseURL
         self.managementKey = managementKey
-        self.session = session
+        self.session = session ?? Self.privateSession
     }
 
     /// Accepts what people paste: a bare host, a trailing slash, or the panel's own address
@@ -44,7 +49,8 @@ public struct HubClient: Sendable {
         if !trimmed.contains("://") {
             // Without a scheme, only this machine gets plain HTTP: the request carries the
             // management key.
-            let isLocal = ["127.0.0.1", "localhost", "[::1]"].contains { trimmed.hasPrefix($0) }
+            let host = URLComponents(string: "https://" + trimmed)?.host?.lowercased() ?? ""
+            let isLocal = ["127.0.0.1", "localhost", "::1", "[::1]"].contains(host)
             trimmed = (isLocal ? "http://" : "https://") + trimmed
         }
         guard let parsed = URLComponents(string: trimmed),
@@ -67,7 +73,7 @@ public struct HubClient: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: request, delegate: RedirectRefuser())
         } catch {
             throw .unreachable(error.localizedDescription)
         }
@@ -96,6 +102,19 @@ public struct HubClient: Sendable {
             return nil
         }
         return String(text.prefix(160))
+    }
+}
+
+/// Stops at a redirect instead of following it. The hub never answers this route with one,
+/// and following it would hand the management key to wherever it points.
+private final class RedirectRefuser: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        nil
     }
 }
 

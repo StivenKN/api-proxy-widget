@@ -42,6 +42,12 @@ final class LimitsStore {
 
     var pools: [ProviderPool] { Pool.pools(from: accounts, at: now) }
 
+    /// The pool the menu bar gauges show: Claude if it has limits to show, otherwise Codex.
+    var menuBarPool: ProviderPool? {
+        let pools = pools
+        return pools.first { !$0.windows.isEmpty } ?? pools.first
+    }
+
     /// Whether the limits on hand can no longer be trusted at a glance: the hub rejected the
     /// key, or it has not answered for several polls.
     var isOutOfDate: Bool {
@@ -88,9 +94,11 @@ final class LimitsStore {
         startPolling()
     }
 
-    /// Called when the panel opens, so it never shows limits older than a few seconds.
+    /// Called when the panel opens, so it never shows limits older than a few seconds and
+    /// asks again right away if the hub has not answered yet.
     func refreshIfStale() {
-        guard let lastUpdated, Date().timeIntervalSince(lastUpdated) > 10 else { return }
+        if let lastUpdated, Date().timeIntervalSince(lastUpdated) <= 10 { return }
+        guard lastUpdated != nil || error != nil else { return }
         refreshNow()
     }
 
