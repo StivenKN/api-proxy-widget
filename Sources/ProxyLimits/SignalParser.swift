@@ -26,6 +26,9 @@ enum SignalParser {
     /// `anthropic-ratelimit-unified-<window>-<field>`, where the window is `5h`, `7d` or a
     /// model-scoped one such as `7d_sonnet`. Utilization is a 0...1 fraction and reset is epoch
     /// seconds.
+    ///
+    /// Some accounts never get 5-hour headers, even under steady use. A missing window stays
+    /// missing: it is not known to be unused.
     private static func claudeWindows(_ signals: [String: String]) -> [Ranked] {
         let prefix = "anthropic-ratelimit-unified-"
         var fields: [String: [String: String]] = [:]
@@ -36,7 +39,7 @@ enum SignalParser {
             guard parts[0] != "overage" else { continue }
             fields[String(parts[0]), default: [:]][String(parts[1])] = value
         }
-        var windows: [Ranked] = fields.compactMap { id, field in
+        return fields.compactMap { id, field in
             let rejected = field["status"] == "rejected"
             guard let used = rejected ? 1 : field["utilization"].flatMap(Double.init), used.isFinite else {
                 return nil
@@ -49,13 +52,6 @@ enum SignalParser {
             )
             return (windowRank(id), window)
         }
-        // Anthropic leaves the 5-hour headers out while that window has no usage, so a
-        // reading with a weekly window and no 5-hour one means the 5-hour window is unused.
-        // CLIProxyAPI reads it the same way when it routes (QuotaWindowIdle).
-        if windows.contains(where: { $0.window.id == "7d" }), !windows.contains(where: { $0.window.id == "5h" }) {
-            windows.append((windowRank("5h"), LimitWindow(id: "5h", label: claudeLabel("5h"), usedFraction: 0, resetsAt: nil)))
-        }
-        return windows
     }
 
     private static func claudeLabel(_ id: String) -> String {

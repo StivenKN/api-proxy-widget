@@ -22,17 +22,10 @@ private func isClose(_ a: Double?, _ b: Double) -> Bool {
         #expect(isClose(ada.observedAt?.timeIntervalSince1970, 1_795_136_709.482))
     }
 
-    @Test func aClaudeReadingWithoutA5HourWindowMeansThatWindowIsUnused() throws {
-        // Anthropic sends no 5-hour headers while the 5-hour window has no usage.
+    @Test func anAccountWithout5HourHeadersOnlyHasItsWeeklyWindow() throws {
+        // Seen on a real hub: an account in steady use whose responses carry no 5-hour headers.
         let grace = try #require(fixtureAccounts().first { $0.id.contains("bbbb2222") })
-
-        #expect(grace.windows.map(\.id) == ["5h", "7d"])
-        #expect(grace.windows.first?.usedFraction == 0)
-        #expect(grace.windows.first?.resetsAt == nil)
-    }
-
-    @Test func aClaudeAccountWithNoReadingHasNoWindows() {
-        #expect(SignalParser.windows(provider: .claude, signals: [:], observedAt: nil).isEmpty)
+        #expect(grace.windows.map(\.id) == ["7d"])
     }
 
     @Test func aRejectedWindowIsFullyUsedEvenWithoutAUtilization() throws {
@@ -139,11 +132,10 @@ private func isClose(_ a: Double?, _ b: Double) -> Bool {
         #expect(pools.map(\.provider) == [.claude, .codex])
         #expect(claude.windows.map(\.id) == ["5h", "7d", "7d_sonnet"])
 
-        // ada has 80% left, grace's window is unused and linus is rejected. The API-key
-        // entry has no reading and is left out.
+        // ada has 80% left and linus is rejected; grace reports no 5-hour window.
         let fiveHour = try #require(claude.window("5h"))
-        #expect(isClose(fiveHour.remainingFraction, (0.8 + 1 + 0) / 3))
-        #expect(fiveHour.accountCount == 3)
+        #expect(isClose(fiveHour.remainingFraction, 0.4))
+        #expect(fiveHour.accountCount == 2)
         #expect(fiveHour.nextReset == date(1_795_147_200))
 
         // ada 73%, grace 39%, linus 10%. The benched account's 1% is left out.
