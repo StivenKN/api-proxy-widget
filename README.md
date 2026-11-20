@@ -6,7 +6,7 @@ A macOS menu bar widget that shows how much of your Claude and Codex limits is l
 
 It is for people who run the [one hub, many accounts](https://gist.github.com/t3dotgg/59a521d2ee8d70aaf90e280c175072af) setup and want the pooled limits one glance away instead of on the hub's quota page.
 
-<img src="assets/screenshot.png" width="338" alt="The widget's panel: pooled 5-hour and weekly limits for Claude and Codex, then each account">
+<img src="assets/screenshot.png" width="360" alt="The widget's panel: pooled 5-hour and weekly limits for Claude and Codex, then each account">
 
 The screenshot shows made-up accounts from `make demo-hub`.
 

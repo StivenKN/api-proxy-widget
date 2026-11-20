@@ -15,23 +15,24 @@ struct LimitsView: View {
                 if let error = store.error {
                     ErrorBanner(error: error, hasData: !store.accounts.isEmpty, retry: store.refreshNow)
                         .padding([.horizontal, .top], Metrics.edge)
+                        .padding(.bottom, pools.isEmpty ? Metrics.edge : 0)
                 }
                 if !pools.isEmpty {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 22) {
+                        VStack(alignment: .leading, spacing: 24) {
                             ForEach(pools) { pool in
                                 ProviderSection(pool: pool, now: now)
                             }
                         }
                         .padding(Metrics.edge)
                     }
-                    .scrollIndicators(.never)
-                    .frame(maxHeight: 640)
+                    // Grows to the screen, so two providers fit without scrolling on most Macs.
+                    .frame(maxHeight: max(480, (NSScreen.main?.visibleFrame.height ?? 800) - 120))
                     .fixedSize(horizontal: false, vertical: true)
                 } else if store.error == nil {
                     EmptyState(store: store)
                 }
-                Divider().opacity(0.6)
+                Divider()
                 Footer(store: store, now: now, openSettings: openSettings)
             }
         }
@@ -39,15 +40,16 @@ struct LimitsView: View {
     }
 }
 
-/// Spacing shared by every part of the panel, so all content sits on the same left and right edge.
+/// Spacing shared by every part of the panel. Section titles sit on `edge`; everything inside a
+/// tile or an account row sits `inset` further in, on both sides.
 enum Metrics {
     static let edge: CGFloat = 16
-    static let column: CGFloat = 68
+    static let inset: CGFloat = 12
+    static let column: CGFloat = 58
     static let tileRadius: CGFloat = 12
 }
 
-/// How full a limit is, and the color it earns. Healthy limits stay neutral so color only ever
-/// means "look at this".
+/// The color a limit earns. Healthy limits stay neutral so color only ever means "look at this".
 enum Level {
     static func tint(_ remaining: Double) -> Color? {
         switch remaining {
@@ -56,6 +58,14 @@ enum Level {
         default: nil
         }
     }
+}
+
+/// Words for a pooled window's soonest reset. With several accounts it is only the first of
+/// several resets, so it is "next", not the moment the whole pool refills.
+private func resetText(_ window: PooledWindow, now: Date) -> String {
+    guard let reset = window.nextReset else { return "No reset scheduled" }
+    let lead = window.accountCount > 1 ? "Next reset in" : "Resets in"
+    return "\(lead) \(LimitFormat.duration(until: reset, from: now))"
 }
 
 // MARK: Provider
@@ -84,17 +94,19 @@ private struct ProviderSection: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             } else {
-                HStack(alignment: .top, spacing: 8) {
-                    ForEach(mainWindows) { window in
-                        WindowTile(window: window, activeAccounts: pool.activeAccountCount, now: now)
+                VStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(mainWindows) { window in
+                            WindowTile(window: window, activeAccounts: pool.activeAccountCount, now: now)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    ForEach(extraWindows) { window in
+                        ExtraWindowTile(window: window, activeAccounts: pool.activeAccountCount, now: now)
                     }
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                ForEach(extraWindows) { window in
-                    ExtraWindowTile(window: window, activeAccounts: pool.activeAccountCount, now: now)
-                }
             }
-            AccountList(accounts: pool.accounts, columns: mainWindows.map(\.id), now: now)
+            AccountList(accounts: pool.accounts, columns: mainWindows.map(Column.init), now: now)
         }
     }
 
@@ -102,7 +114,9 @@ private struct ProviderSection: View {
     /// listed under the tiles and under the accounts that report them.
     private var mainWindows: [PooledWindow] {
         let main = pool.windows.filter { ["5h", "7d"].contains($0.id) }
-        return main.isEmpty ? Array(pool.windows.prefix(2)) : main
+        if !main.isEmpty { return main }
+        // A provider with other window lengths: its first unscoped windows, never a model's.
+        return Array(pool.windows.filter { !$0.id.contains("_") && !$0.id.contains(":") }.prefix(2))
     }
 
     private var extraWindows: [PooledWindow] {
@@ -127,17 +141,15 @@ private struct WindowTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(window.label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(number)
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                    .font(.system(size: 30, weight: .semibold))
                 Text("%")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .font(.system(size: 17, weight: .semibold))
                 Text("left")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 4)
             }
@@ -146,27 +158,25 @@ private struct WindowTile: View {
             Meter(remaining: window.remainingFraction, height: 5)
                 .padding(.top, 8)
             VStack(alignment: .leading, spacing: 1) {
-                Text(reset)
+                Text(resetText(window, now: now))
                 if window.accountCount < activeAccounts {
                     Text("\(window.accountCount) of \(activeAccounts) reporting")
                 }
             }
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
-            .monospacedDigit()
             .padding(.top, 8)
         }
+        .monospacedDigit()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .tile()
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pooled \(window.label)")
+        .accessibilityValue("\(LimitFormat.percent(window.remainingFraction)) left. \(resetText(window, now: now))")
     }
 
     private var number: String {
         String(LimitFormat.percent(window.remainingFraction).dropLast())
-    }
-
-    private var reset: String {
-        window.nextReset.map { "Resets in \(LimitFormat.duration(until: $0, from: now))" } ?? "No reset scheduled"
     }
 }
 
@@ -179,10 +189,9 @@ private struct ExtraWindowTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(window.label)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                     Text(detail)
                         .font(.system(size: 11))
@@ -192,9 +201,12 @@ private struct ExtraWindowTile: View {
                 Spacer(minLength: 8)
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
                     Text(String(LimitFormat.percent(window.remainingFraction).dropLast()))
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .contentTransition(.numericText())
-                    Text("%").font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 20, weight: .semibold))
+                    Text("%").font(.system(size: 13, weight: .semibold))
+                    Text("left")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 4)
                 }
                 .foregroundStyle(Level.tint(window.remainingFraction) ?? .primary)
             }
@@ -202,26 +214,25 @@ private struct ExtraWindowTile: View {
         }
         .monospacedDigit()
         .tile()
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pooled \(window.label)")
+        .accessibilityValue("\(LimitFormat.percent(window.remainingFraction)) left. \(detail)")
     }
 
     private var detail: String {
-        var parts: [String] = []
-        if let reset = window.nextReset {
-            parts.append("Resets in \(LimitFormat.duration(until: reset, from: now))")
-        }
+        var parts = [resetText(window, now: now)]
         if window.accountCount < activeAccounts {
             parts.append("\(window.accountCount) of \(activeAccounts) reporting")
         }
-        return parts.isEmpty ? "No reset scheduled" : parts.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 }
 
 private extension View {
-    /// The quiet raised surface every pooled reading sits on.
+    /// The raised surface every pooled reading sits on.
     func tile() -> some View {
-        padding(12)
-            .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: Metrics.tileRadius))
+        padding(Metrics.inset)
+            .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: Metrics.tileRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: Metrics.tileRadius)
                     .strokeBorder(.primary.opacity(0.06), lineWidth: 0.5)
@@ -231,143 +242,174 @@ private extension View {
 
 // MARK: Accounts
 
+/// A column of the account table: one of the windows that has a tile above.
+private struct Column: Identifiable {
+    let id: String
+    let title: String
+
+    init(_ window: PooledWindow) {
+        id = window.id
+        title = window.label
+    }
+}
+
 private struct AccountList: View {
     let accounts: [Account]
-    let columns: [String]
+    let columns: [Column]
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 Text("Accounts")
                 Spacer()
-                ForEach(columns, id: \.self) { id in
-                    Text(columnTitle(id)).frame(width: Metrics.column, alignment: .trailing)
+                ForEach(columns) { column in
+                    Text(column.title)
+                        .lineLimit(1)
+                        .frame(width: Metrics.column, alignment: .trailing)
                 }
             }
-            .font(.system(size: 10, weight: .semibold))
-            .textCase(.uppercase)
-            .tracking(0.5)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, AccountRow.inset)
-            .padding(.bottom, 2)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Metrics.inset)
+            .padding(.bottom, 6)
+            .accessibilityHidden(true)
+
+            Divider().padding(.horizontal, Metrics.inset)
 
             ForEach(accounts) { account in
                 AccountRow(account: account, columns: columns, now: now)
             }
         }
-        .padding(.top, 6)
-    }
-
-    private func columnTitle(_ id: String) -> String {
-        accounts.lazy.flatMap(\.windows).first { $0.id == id }.map { window in
-            switch window.id {
-            case "5h": "5-hour"
-            case "7d": "Weekly"
-            default: window.label
-            }
-        } ?? id
+        .padding(.top, 8)
     }
 }
 
 private struct AccountRow: View {
-    static let inset: CGFloat = 8
-
     let account: Account
-    let columns: [String]
+    let columns: [Column]
     let now: Date
-
-    @State private var isHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center, spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.name)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(status.text)
                         .font(.system(size: 11))
                         .foregroundStyle(status.tint ?? .secondary)
-                        .monospacedDigit()
                         .lineLimit(1)
                 }
                 .layoutPriority(1)
+                .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
-                ForEach(columns, id: \.self) { id in
-                    WindowCell(window: account.windows.first { $0.id == id }, now: now)
-                        .frame(width: Metrics.column, alignment: .trailing)
+                ForEach(columns) { column in
+                    WindowCell(
+                        title: column.title,
+                        window: account.windows.first { $0.id == column.id },
+                        isDisabled: account.isDisabled,
+                        now: now
+                    )
+                    .frame(width: Metrics.column, alignment: .trailing)
                 }
             }
             ForEach(extraWindows) { window in
-                HStack(spacing: 6) {
-                    Text(window.label)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    WindowCell(window: window, now: now)
-                        .frame(width: Metrics.column, alignment: .trailing)
-                }
-                .font(.system(size: 11))
+                ScopedWindowLine(window: window, isDisabled: account.isDisabled, now: now)
             }
         }
-        .padding(.horizontal, Self.inset)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 8).fill(.primary.opacity(isHovered ? 0.05 : 0))
-        )
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.12), value: isHovered)
-        .opacity(account.isDisabled ? 0.45 : 1)
-        .accessibilityElement(children: .combine)
+        .monospacedDigit()
+        .padding(.horizontal, Metrics.inset)
+        .padding(.vertical, 8)
+        .opacity(account.isDisabled ? 0.6 : 1)
+        .accessibilityElement(children: .contain)
     }
 
     private var extraWindows: [LimitWindow] {
-        account.windows.filter { !columns.contains($0.id) }
+        account.windows.filter { window in !columns.contains { $0.id == window.id } }
     }
 
     /// What the hub says about the account: benched, cooling down, or how old its reading is.
     private var status: (text: String, tint: Color?) {
-        if account.isDisabled { return ("Disabled", nil) }
+        let plan = account.plan.map { "\($0.capitalized) · " } ?? ""
+        if account.isDisabled { return (plan + "Disabled", nil) }
         if account.isUnavailable {
             if let back = account.availableAgainAt, back > now {
                 return ("Cooling down · \(LimitFormat.duration(until: back, from: now))", .orange)
             }
             return ("Unavailable", .orange)
         }
-        let plan = account.plan.map { "\($0.capitalized) · " } ?? ""
         guard let observedAt = account.observedAt else { return (plan + "No data yet", nil) }
         return (plan + "Read \(LimitFormat.age(of: observedAt, at: now))", nil)
     }
 }
 
-/// One account's reading for one window: a short bar, the share left and when it resets.
+/// One account's reading for one column: the share left and when it resets.
 private struct WindowCell: View {
+    let title: String
     let window: LimitWindow?
+    let isDisabled: Bool
     let now: Date
 
     var body: some View {
         if let window {
             let remaining = window.remainingFraction(at: now)
+            let reset = window.upcomingReset(at: now).map { LimitFormat.duration(until: $0, from: now) }
             VStack(alignment: .trailing, spacing: 2) {
-                HStack(spacing: 6) {
-                    Meter(remaining: remaining, height: 4).frame(width: 20)
-                    Text(LimitFormat.percent(remaining))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Level.tint(remaining) ?? .primary)
-                }
-                Text(window.upcomingReset(at: now).map { LimitFormat.duration(until: $0, from: now) } ?? "—")
-                    .font(.system(size: 10.5))
+                Text(LimitFormat.percent(remaining))
+                    .font(.system(size: 13, weight: .semibold))
+                    // A benched account is not in the pool, so its low reading is no warning.
+                    .foregroundStyle((isDisabled ? nil : Level.tint(remaining)) ?? .primary)
+                Text(reset ?? "—")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
-            .monospacedDigit()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+            .accessibilityValue(
+                "\(LimitFormat.percent(remaining)) left" + (reset.map { ", resets in \($0)" } ?? "")
+            )
         } else {
             Text("—")
-                .font(.system(size: 12))
-                .foregroundStyle(.quaternary)
-                .accessibilityLabel("No reading")
+                .font(.system(size: 13))
+                .foregroundStyle(.tertiary)
+                .accessibilityLabel(title)
+                .accessibilityValue("No reading")
         }
+    }
+}
+
+/// A model-scoped window of one account, on its own line under the account.
+private struct ScopedWindowLine: View {
+    let window: LimitWindow
+    let isDisabled: Bool
+    let now: Date
+
+    var body: some View {
+        let remaining = window.remainingFraction(at: now)
+        let reset = window.upcomingReset(at: now).map { LimitFormat.duration(until: $0, from: now) }
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.tertiary)
+            Text(window.label)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            if let reset {
+                Text(reset).foregroundStyle(.secondary)
+            }
+            Text(LimitFormat.percent(remaining))
+                .fontWeight(.semibold)
+                .foregroundStyle((isDisabled ? nil : Level.tint(remaining)) ?? .primary)
+                .frame(width: 36, alignment: .trailing)
+        }
+        .font(.system(size: 11))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(window.label)
+        .accessibilityValue("\(LimitFormat.percent(remaining)) left" + (reset.map { ", resets in \($0)" } ?? ""))
     }
 }
 
@@ -430,7 +472,7 @@ private struct ErrorBanner: View {
                 Button("Retry", action: retry).controlSize(.small)
             }
         }
-        .padding(12)
+        .padding(Metrics.inset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: Metrics.tileRadius))
         .overlay(
@@ -449,9 +491,6 @@ private struct EmptyState: View {
                 ProgressView().controlSize(.small)
                 Text("Reading limits…")
             } else {
-                Image(systemName: "person.2.slash")
-                    .font(.system(size: 18))
-                    .foregroundStyle(.tertiary)
                 Text("No Claude or Codex accounts on this hub.")
             }
         }
@@ -469,15 +508,22 @@ private struct Footer: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(store.error == nil ? Color.green : Color.orange)
-                .frame(width: 6, height: 6)
-            Text(status)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .truncationMode(.middle)
+            // The address may be cut in the middle, but the port and the age always show.
+            HStack(spacing: 0) {
+                if let hub = store.hubURL, let host = hub.host() {
+                    Text(hub.port.map { "\(host):\($0)" } ?? host)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if let updated = store.lastUpdated {
+                    Text(" · updated \(LimitFormat.age(of: updated, at: now))")
+                        .fixedSize()
+                        .layoutPriority(1)
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
             Spacer(minLength: 8)
             FooterButton(symbol: "arrow.clockwise", help: "Read limits now", action: store.refreshNow)
                 .disabled(store.isRefreshing || store.error == .keyRejected)
@@ -487,21 +533,10 @@ private struct Footer: View {
         .padding(.trailing, Metrics.edge - 6)
         .padding(.vertical, 8)
     }
-
-    private var status: String {
-        var parts: [String] = []
-        if let hub = store.hubURL, let host = hub.host() {
-            parts.append(hub.port.map { "\(host):\($0)" } ?? host)
-        }
-        if let updated = store.lastUpdated {
-            parts.append("updated \(LimitFormat.age(of: updated, at: now))")
-        }
-        return parts.joined(separator: " · ")
-    }
 }
 
 /// A borderless icon button that shows its hit area on hover, like the ones in Control Center.
-struct FooterButton: View {
+private struct FooterButton: View {
     let symbol: String
     let help: String
     let action: () -> Void
@@ -520,6 +555,7 @@ struct FooterButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .help(help)
+        .accessibilityLabel(help)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
     }
