@@ -26,6 +26,7 @@ struct LimitsView: View {
                         }
                         .padding(Metrics.edge)
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                     .frame(maxHeight: Metrics.scrollHeight)
                     .fixedSize(horizontal: false, vertical: true)
                 } else if store.error == nil {
@@ -53,6 +54,19 @@ enum Metrics {
         let screen = NSScreen.screens.map(\.visibleFrame.height).min() ?? 800
         return max(480, screen - 190)
     }
+}
+
+extension Color {
+    /// Text for names and readings. On the panel's material macOS blends the system label colors
+    /// into the backdrop, which draws `.primary` mid-grey and, over a dark window, lighter than
+    /// the captions under it. A color of our own is drawn as is.
+    static let label = Color(
+        nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(white: 0.96, alpha: 1)
+                : NSColor(white: 0.1, alpha: 1)
+        }
+    )
 }
 
 /// The color a limit earns. Healthy limits stay neutral so color only ever means "look at this".
@@ -85,6 +99,7 @@ private struct ProviderSection: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(pool.provider.displayName)
                     .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.label)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Text(accountSummary)
@@ -204,7 +219,7 @@ private struct Reading: View {
             Text(
                 "\(Text(number).font(.system(size: size, weight: .semibold)))\(Text("%").font(.system(size: size * 0.57, weight: .semibold)))"
             )
-            .foregroundStyle(Level.tint(remaining) ?? .primary)
+            .foregroundStyle(Level.tint(remaining) ?? .label)
             Text("left")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -226,6 +241,7 @@ private struct ExtraWindowTile: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer(minLength: 8)
                 Reading(remaining: window.remainingFraction, size: 20)
             }
@@ -316,6 +332,7 @@ private struct AccountRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.name)
                         .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.label)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     HStack(spacing: 4) {
@@ -323,10 +340,16 @@ private struct AccountRow: View {
                             Image(systemName: "exclamationmark.circle.fill")
                                 .font(.system(size: 10))
                                 .foregroundStyle(tint)
+                                .accessibilityHidden(true)
                         }
-                        Text(status.text)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        // A long plan gives way before the state does: a countdown never gets cut.
+                        HStack(spacing: 0) {
+                            if let plan = account.plan {
+                                Text("\(plan.capitalized) · ").lineLimit(1)
+                            }
+                            Text(status.text).lineLimit(1).layoutPriority(1)
+                        }
+                        .foregroundStyle(.secondary)
                     }
                     .font(.system(size: 11))
                 }
@@ -360,16 +383,15 @@ private struct AccountRow: View {
 
     /// What the hub says about the account: benched, cooling down, or how old its reading is.
     private var status: (text: String, tint: Color?) {
-        let plan = account.plan.map { "\($0.capitalized) · " } ?? ""
-        if account.isDisabled { return (plan + "Disabled", nil) }
+        if account.isDisabled { return ("Disabled", nil) }
         if account.isUnavailable {
             if let back = account.availableAgainAt, back > now {
-                return (plan + "Cooling down · \(LimitFormat.duration(until: back, from: now))", .orange)
+                return ("Cooling down · \(LimitFormat.duration(until: back, from: now))", .orange)
             }
-            return (plan + "Unavailable", .orange)
+            return ("Unavailable", .orange)
         }
-        guard let observedAt = account.observedAt else { return (plan + "No data yet", nil) }
-        return (plan + "Read \(LimitFormat.age(of: observedAt, at: now))", nil)
+        guard let observedAt = account.observedAt else { return ("No data yet", nil) }
+        return ("Read \(LimitFormat.age(of: observedAt, at: now))", nil)
     }
 }
 
@@ -388,7 +410,7 @@ private struct WindowCell: View {
                 Text(LimitFormat.percent(remaining))
                     .font(.system(size: 13, weight: .semibold))
                     // A benched account is not in the pool, so its low reading is no warning.
-                    .foregroundStyle((isDisabled ? nil : Level.tint(remaining)) ?? .primary)
+                    .foregroundStyle((isDisabled ? nil : Level.tint(remaining)) ?? .label)
                 Text(reset ?? "—")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -428,7 +450,7 @@ private struct ScopedWindowLine: View {
             Spacer(minLength: 4)
             Text(LimitFormat.percent(remaining))
                 .fontWeight(.semibold)
-                .foregroundStyle((isDisabled ? nil : Level.tint(remaining)) ?? .primary)
+                .foregroundStyle((isDisabled ? nil : Level.tint(remaining)) ?? .label)
                 .frame(width: Metrics.column, alignment: .trailing)
         }
         .font(.system(size: 11))
@@ -478,6 +500,7 @@ private struct ErrorBanner: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(error.message)
                     .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.label)
                     .fixedSize(horizontal: false, vertical: true)
                 if hasData {
                     Text("Showing the last limits that were read.")

@@ -18,6 +18,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(store.isConfigured ? "Settings" : "Connect your hub")
                 .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.label)
             if !store.isConfigured {
                 Text("The widget reads limits from your CLIProxyAPI hub's management API.")
                     .font(.system(size: 12))
