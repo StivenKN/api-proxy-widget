@@ -27,7 +27,7 @@ enum SignalParser {
     /// model-scoped one such as `7d_sonnet`. Utilization is a 0...1 fraction and reset is epoch
     /// seconds.
     ///
-    /// Some accounts never get 5-hour headers, even under steady use. A missing window stays
+    /// Some accounts get no 5-hour headers, even under steady use. A missing window stays
     /// missing: it is not known to be unused.
     private static func claudeWindows(_ signals: [String: String]) -> [Ranked] {
         let prefix = "anthropic-ratelimit-unified-"
