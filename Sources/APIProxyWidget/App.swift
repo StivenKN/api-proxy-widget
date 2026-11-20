@@ -30,6 +30,6 @@ private struct PanelView: View {
                 LimitsView(store: store) { showsSettings = true }
             }
         }
-        .frame(width: 330)
+        .frame(width: 352)
     }
 }

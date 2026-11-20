@@ -20,11 +20,11 @@ def iso(epoch):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
 
-def claude(name, five_hour=None, weekly=None, seen_ago=60, **extra):
-    """five_hour and weekly are (used fraction, seconds until reset)."""
+def claude(name, five_hour=None, weekly=None, seen_ago=60, opus=None, **extra):
+    """five_hour, weekly and the model-scoped opus are (used fraction, seconds until reset)."""
     now = time.time()
     signals = {}
-    for window, reading in (("5h", five_hour), ("7d", weekly)):
+    for window, reading in (("5h", five_hour), ("7d", weekly), ("7d_opus", opus)):
         if reading is None:
             continue
         used, resets_in = reading
@@ -65,7 +65,7 @@ def codex(name, plan, five_hour, weekly, seen_ago=120):
 def accounts():
     now = time.time()
     return [
-        claude("ada@example.com", (0.34, 2.2 * HOUR), (0.27, 2.6 * DAY), seen_ago=20),
+        claude("ada@example.com", (0.34, 2.2 * HOUR), (0.27, 2.6 * DAY), seen_ago=20, opus=(0.12, 2.6 * DAY)),
         claude("grace@example.com", None, (0.61, 4.1 * DAY), seen_ago=95 * 60),
         claude(
             "linus@example.com",

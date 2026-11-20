@@ -15,22 +15,23 @@ struct SettingsView: View {
     @State private var launchesAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(store.isConfigured ? "Settings" : "Connect your hub").font(.headline)
+        VStack(alignment: .leading, spacing: 14) {
+            Text(store.isConfigured ? "Settings" : "Connect your hub")
+                .font(.system(size: 15, weight: .semibold))
             if !store.isConfigured {
                 Text("The widget reads limits from your CLIProxyAPI hub's management API.")
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Hub address").font(.caption).foregroundStyle(.secondary)
+                Text("Hub address").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 TextField("https://hub.example.ts.net:8317", text: $hubText)
                     .textFieldStyle(.roundedBorder)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Management key").font(.caption).foregroundStyle(.secondary)
+                Text("Management key").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 SecureField(keyPlaceholder, text: $keyText)
                     .textFieldStyle(.roundedBorder)
                     // Not a login: keeps macOS from offering saved passwords, whose popup
@@ -38,12 +39,12 @@ struct SettingsView: View {
                     .textContentType(.oneTimeCode)
                     .onSubmit(save)
                 Text("The hub's management secret-key, not the access key your tools send. It is stored in your Keychain.")
-                    .font(.caption2)
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let problem {
-                Text(problem).font(.caption).foregroundStyle(.red)
+                Text(problem).font(.system(size: 12)).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -60,7 +61,7 @@ struct SettingsView: View {
                 Button("Save", action: save).keyboardShortcut(.defaultAction).disabled(isSaving)
             }
         }
-        .padding(14)
+        .padding(Metrics.edge)
         .onAppear { hubText = store.hubURL?.absoluteString ?? "http://127.0.0.1:8317" }
     }
 
