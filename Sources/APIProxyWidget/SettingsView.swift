@@ -49,7 +49,7 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Toggle("Open at login", isOn: $launchesAtLogin)
+            Toggle(isOn: $launchesAtLogin) { Text("Open at login").foregroundStyle(Color.label) }
                 .toggleStyle(.checkbox)
                 .onChange(of: launchesAtLogin) { _, wanted in setLaunchAtLogin(wanted) }
 

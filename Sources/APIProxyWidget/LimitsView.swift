@@ -342,13 +342,15 @@ private struct AccountRow: View {
                                 .foregroundStyle(tint)
                                 .accessibilityHidden(true)
                         }
-                        // A long plan gives way before the state does: a countdown never gets cut.
-                        HStack(spacing: 0) {
+                        // The plan shows whole or not at all: a countdown never gets cut, and
+                        // neither does a word.
+                        ViewThatFits(in: .horizontal) {
                             if let plan = account.plan {
-                                Text("\(plan.capitalized) · ").lineLimit(1)
+                                Text("\(plan.capitalized) · \(status.text)")
                             }
-                            Text(status.text).lineLimit(1).layoutPriority(1)
+                            Text(status.text)
                         }
+                        .lineLimit(1)
                         .foregroundStyle(.secondary)
                     }
                     .font(.system(size: 11))
