@@ -352,6 +352,8 @@ private struct AccountRow: View {
                         }
                         .lineLimit(1)
                         .foregroundStyle(.secondary)
+                        // VoiceOver reads the plan even when the row is too narrow to show it.
+                        .accessibilityLabel(account.plan.map { "\($0.capitalized) · \(status.text)" } ?? status.text)
                     }
                     .font(.system(size: 11))
                 }
